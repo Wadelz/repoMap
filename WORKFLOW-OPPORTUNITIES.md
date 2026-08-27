@@ -154,3 +154,84 @@ converted into scripts or CI:
 - `SEO`, `security`, and `Coolify-` are empty; `startup-script-test` holds one
   unrelated, stalled Google-Drive-inventory handoff. None of these produced
   workflow findings — see `README.md`.
+
+---
+
+## Review: 2026-08-27 — AgenticUniverse (Team Bridge relay + agent-team tooling)
+
+First deep-dive pass on this repo; the initial cross-repo review only ruled it
+out of the comms lineage (see `README.md`) without examining its own workflow.
+Chosen this run as the most recently active repo (`614d7e4`, 2026-08-25) with
+no findings on record yet. Source: `.claude/skills/team*/`,
+`docs/relay-and-egress-field-notes.md`, `docs/agent-teams-test.md`,
+`.claude/hooks/session-start.sh`, `.github/workflows/deploy-relay.yml`, and
+`relay/cloudflare/`. No raw transcripts were directly readable; these docs are
+themselves post-session write-ups (dated 2026-08-21 and undated field notes),
+the closest durable substitute available, same as the methodology note above.
+
+### 11. No pre-deploy verification for the relay Worker
+- **What / who:** `relay/cloudflare/worker.ts` carries the logic that gates
+  every command reaching the agent team from a phone (route ordering, token
+  checks, Durable Object dispatch) — exactly the kind of logic that already
+  shipped one real bug (`HEAD /health` falling through the `GET`-only
+  exemption into the token check, documented in
+  `docs/relay-and-egress-field-notes.md` §5). `package.json`'s `test` script
+  is a stub (`echo "Error: no test specified" && exit 1`), and
+  `.github/workflows/deploy-relay.yml` runs `npm ci`/`install` then
+  `wrangler deploy` directly — no typecheck, no unit test.
+- **Where it lives:** `relay/cloudflare/package.json`,
+  `.github/workflows/deploy-relay.yml`.
+- **Opportunity:** The workflow's only verification is a live `GET`+`HEAD
+  /health` probe against production *after* deploying — which is exactly how
+  the HEAD bug above was actually caught, meaning today's safety net is "ship
+  it and see." Adding `tsc --noEmit` plus a small route-order/gating unit test
+  (or at minimum a `wrangler dev` + local curl smoke test covering the token
+  and DO-dispatch paths, not just `/health`) as a required step before deploy
+  would catch this class of bug pre-production instead of in the field.
+  Impact if left alone: the relay is the transport for destructive commands
+  (`kill` tears down the running agent team); a bad deploy is currently
+  discovered only by the two paths the post-deploy check happens to cover.
+
+### 12. Destructive relay commands gated by prose convention, not code
+- **What / who:** `kill` and `logout`, queued from the phone control-panel
+  artifact or typed into the relay thread, are documented in three places
+  (`.claude/skills/team/SKILL.md`, `relay/SETUP.md`'s security checklist) as
+  requiring a human confirmation step in the thread before the listening
+  Claude session executes them — "the relay does not validate command
+  content — it is a transport." Nothing in `worker.ts` or `team.sh` itself
+  distinguishes a destructive command from a routine one or requires a
+  second signal; the guard exists only in the instructions given to whichever
+  session happens to have loaded the `team` skill.
+- **Where it lives:** `.claude/skills/team/SKILL.md` ("Two judgement calls
+  stay yours…"), `relay/SETUP.md` security checklist. No code enforcement.
+- **Opportunity:** Same shape as finding #4 above (`agent-comms`'
+  documentation-only ordering rule for `/fire` and shared bearer tokens) —
+  convention where enforcement would be cheap. `team.sh kill`/`logout` could
+  require an explicit second argument (e.g. `--confirm`) or a queued
+  follow-up item, so the destructive action can't fire from a single tap
+  regardless of which session, or how carefully briefed, is draining the
+  queue. Low cost; closes a documented-but-unenforced gap the account has
+  already hit once in a different repo.
+
+### Correctly left manual — not a gap
+- **Long-lived `CLAUDE_CODE_OAUTH_TOKEN` vs. per-session login.** The
+  `team-setup` skill requires stating the real tradeoff out loud (a
+  long-lived bearer credential injected into every container vs. repeated
+  8-hour login friction) before the user commits, and explicitly refuses to
+  source such a token any other way (no harvesting one out of a running
+  process). This is exactly the kind of judgment call that should stay
+  human-gated, matching the same posture `legba`'s docs-audit/changelog steps
+  take (see "Low priority" above) — recorded here so a future pass doesn't
+  mistake deliberate friction for an automation gap.
+
+### Worth noting — a template for an existing open finding
+- `.claude/hooks/session-start.sh` here is a working instance of exactly the
+  pattern finding #1 above (PowerShell 5.1/BOM/parse-check gate for
+  `rat-hunt` / `Claude-Remote-recover`) is asking for: a `SessionStart` hook
+  that *reports* on startup rather than *blocking* it — stale `wrangler`
+  deps, an 8-hour login token close to expiry, an orphaned team config that
+  "reads exactly like a live team." Its own header comment states the
+  principle directly: "a hook that blocks startup over a stale token would be
+  worse than the problem." Worth pointing to as a concrete template when
+  finding #1 is eventually implemented, rather than designing that gate from
+  scratch.
