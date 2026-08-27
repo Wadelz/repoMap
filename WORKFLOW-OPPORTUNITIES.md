@@ -235,3 +235,98 @@ the closest durable substitute available, same as the methodology note above.
   worse than the problem." Worth pointing to as a concrete template when
   finding #1 is eventually implemented, rather than designing that gate from
   scratch.
+
+---
+
+## Review: 2026-08-27 — DFIR cluster deep dive (branches and open PRs, not just `main`)
+
+Second deep-dive this account has had (after AgenticUniverse above). Chosen
+per the "check branches, not just the checkout" step: findings #1, #2, #7, #8
+above were drawn entirely from `CLAUDE.md` prose as read on `main`, and
+neither DFIR repo's non-default branches or PR queue had been examined yet.
+Source: `git branch -a` / `git log` / `git merge-base` against `origin/main`
+for every branch in `Wadelz/rat-hunt` and `Wadelz/Claude-Remote-recover`, plus
+`mcp__github__list_pull_requests` / `pull_request_read` for both repos. No
+raw transcripts were read; branch commit messages are the only record, and
+one of them is itself an explicit, dated design note (quoted below).
+
+**Findings #1 and #2 re-confirmed, unchanged:** `ls .github/workflows` finds
+nothing in either repo — the CI-wiring gap both findings describe is still
+live.
+
+### 13. Incident work — including a stranded security hardening improvement — sits unmerged on both DFIR repos, one PR open and unreviewed for 9 days
+- **What / who:** In `rat-hunt`, `main` carries only the thin lineage
+  (collection scripts, `Rescue-Files.ps1`, relay/skills setup). The actual
+  incident *analysis* — nine registry-hive parsers, a ranked rotation
+  worklist generator, an offline VM-boot scanning kit
+  (`kit/rathunt_offline/`), IOC hash recovery/re-bucketing, and four new test
+  suites (`Test-BrowserStores`/`Test-ShortcutTier`/`Test-SignatureScan`/
+  `Test-SysmonRead`) — lives entirely on branches that never merged:
+  `Moving-forward` → `claude/branch-isolation-note-k905zy` →
+  `archive/ledger-fold-20260818` → `incident-state-20260817` (last commit
+  2026-08-22) is one unreconciled lineage; `claude/new-session-pg9x7i` (last
+  commit 2026-08-24) is a second, independent one — open as **PR #2**
+  ("Record the fourth staging directory...") since 2026-08-18, mergeable
+  ("clean"), 91 commits, +21,242/-24 across 91 files, and as of this review
+  zero comments, zero reviews, zero review requests in 9 days. The first
+  three branches in that lineage don't even have a PR open — nobody has
+  pointed a merge decision at them at all.
+  In `Claude-Remote-recover` — the successor repo, so *not* a case of "the
+  lesson was already learned by splitting repos" as this review first
+  assumed before checking — `claude/new-session-pg9x7i` (same generated name,
+  different repo, unrelated branch) sits 19 commits ahead of `main` with no
+  PR at all, and `main` hasn't moved since the branch point
+  (2026-08-19). Those 19 commits are not cosmetic: `Set-EgressLockdown.ps1`
+  grows from 468 to 815 lines, adding `-ClaudeRunAsUser` (closes a
+  same-user-process-injection bypass of the egress pinhole — running
+  `claude.exe` as a separate local account moves that bypass from "free" to
+  "needs elevation") and `-CollectorOnly` (removes the model API from the
+  allowlist entirely, described in the branch's own comments as "the
+  TIGHTEST configuration here" for a structural reason, not a cosmetic one).
+  A `-NoDns` mode is also there but explicitly flagged not ready as of
+  2026-08-20 (a 25-minute hang reproduced and survived a reboot). The same
+  branch also carries several commits with no visible connection to this
+  repo's incident at all (an Azure jump-host build, a Coolify API
+  experiment) — content that belongs in `AZURE`/`Coolify-` if it belongs
+  anywhere, suggesting the branch name was reused across an unrelated
+  session's work rather than kept scoped to this repo's incident.
+- **Where it lives:** git branch/PR state only. Nothing in either repo's
+  `CLAUDE.md`, `README.md`, or any tracked file lists which branches hold
+  live incident work versus which are safe to delete. The only record of
+  *why* reconciliation was deferred at all is a single commit message on
+  `rat-hunt`'s `claude/branch-isolation-note-k905zy` (`e91cf9a`): it correctly
+  spotted that a plain merge of that branch into `main` would *silently*
+  duplicate work rather than conflict (a concurrent session's plugin-install
+  hook and this branch's vendored-skills approach solve the same problem by
+  touching disjoint files), and deferred the decision "in one place" —
+  a place that, five more branches and nine days later, still hasn't
+  happened.
+- **Opportunity:** Both of these repos exist because of, and describe
+  themselves as covering, **an incident that is still open**
+  (`CLAUDE.md`: "The incident is also still open" / "this host should be
+  reimaged"). Hive-parser findings, IOC corrections, closed/filed OI-tracker
+  items, and a specific process-injection hardening fix for the live
+  containment tool are sitting in a form — dangling branches, one stale PR —
+  that a routine branch cleanup or a `git gc` window could quietly lose, and
+  no future session reading `main` alone would know to look for them. This
+  is *not* "just auto-merge everything" — `branch-isolation-note-k905zy`'s
+  own reasoning shows real reconciliations here need a human to pick a
+  winner between two divergent fixes, so that judgment call should stay
+  manual (see below). What's missing is cheap and mechanical instead: (a) a
+  tracked index — even a one-file `BRANCHES.md` per repo, or just a
+  filled-in PR description — naming every branch that holds unmerged
+  incident content and why, so "nobody pointed a merge decision at it" stops
+  being the silent default; (b) closing the loop on PR #2 and the
+  `Set-EgressLockdown.ps1` hardening specifically, since both are
+  security-relevant and have sat actionable-but-untouched for over a week on
+  an account with no reviewer assigned and no reminder mechanism — the same
+  "convention with no enforcement" shape as findings #4 and #12 above, just
+  with a stopwatch this time instead of a policy statement.
+
+### Correctly left manual — not a gap
+- **Which divergent branch's fix wins**, per `branch-isolation-note-k905zy`
+  above: a real semantically-duplicating merge (two different fixes to the
+  same problem, touching disjoint files, so git reports no conflict) needs a
+  human to choose. The commit that spotted this and stopped a silent merge
+  is a good template for the *reasoning* — it's the follow-through that's
+  missing (#13), not the judgment call itself.
