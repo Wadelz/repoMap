@@ -67,11 +67,17 @@ rather than inferred relationships.
   point. Treat `airco2` as canonical and `aircoenverwarmen-seo-pipeline` as
   a baseline snapshot, not an independent fork.
 - **SEO** — empty (git-initialized, zero commits). Placeholder only.
-- **startup-script-test** — misnamed relative to its content: despite the
-  name, it holds a single handoff document (`SEO-folder-review-handoff.md`)
-  describing a *blocked* task (inventorying a Google Drive "Seo" folder of
-  zip archives, stopped by a download-size cap and missing OAuth). Tangential
-  to the pipeline above, not part of its code.
+- **startup-script-test** — misnamed relative to its content, and more
+  entangled with the pipeline above than the initial pass found (see
+  `WORKFLOW-OPPORTUNITIES.md`, 2026-08-28 review, #14/#16): has no `main` or
+  `master` branch, only four disconnected, unmerged branches. Three hold a
+  blocked Google-Drive-inventory handoff (`SEO-folder-review-handoff.md`,
+  stopped by a download-size cap and missing OAuth) and Hetzner
+  rescue/backup tooling. The fourth, `incident-evidence-20260822`, is *not*
+  tangential — it holds the confirmed-root-cause recovery plan for a second,
+  separate compromise of the same `aircoenverwarmen.nl` site that `airco2`
+  publishes to, six days undocumented anywhere in the pipeline repo's own
+  incident trail as of this review.
 
 ### Security tooling
 
@@ -98,12 +104,16 @@ ClaudeWebPlayground ──(split, 2026-08-16 @ 217cfb8)──> agent-comms
 ClaudeWebPlayground ──(split)──────────────────────────> rat-hunt
 rat-hunt ──(extended: egress lockdown + collector relay)──> Claude-Remote-recover
 aircoenverwarmen-seo-pipeline ──(same root commit fb36aa2, frozen)──> airco2 (active, diverged)
+startup-script-test ──(branch incident-evidence-20260822: 2nd compromise of the site airco2 publishes to)──> airco2
 AgenticUniverse/relay ┄┄ architecturally similar to, but NOT derived from ┄┄ agent-comms/cross-project-relay
 ```
 
 ## Repos with nothing to report
 
-`SEO`, `security`, and `Coolify-` are empty placeholders. `startup-script-test`
-holds one unrelated, stalled handoff doc. None currently warrant workflow
+`SEO`, `security`, and `Coolify-` are empty placeholders. Three of
+`startup-script-test`'s four branches hold an unrelated, stalled handoff doc
+and Hetzner rescue tooling — its fourth branch does not belong in this list,
+see the aircoenverwarmen cluster above and `WORKFLOW-OPPORTUNITIES.md`. None
+of the three unrelated branches currently warrant workflow
 formalization — noted here so a future review doesn't re-scan them expecting
 new content without cause.

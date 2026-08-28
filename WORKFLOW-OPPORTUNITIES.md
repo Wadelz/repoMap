@@ -330,3 +330,170 @@ live.
   human to choose. The commit that spotted this and stopped a silent merge
   is a good template for the *reasoning* — it's the follow-through that's
   missing (#13), not the judgment call itself.
+
+---
+
+## Review: 2026-08-28 — aircoenverwarmen/SEO cluster deep dive (branches, PRs, and a second incident)
+
+Third deep-dive this account has had. Chosen per the prioritization rule: this
+cluster (`aircoenverwarmen-seo-pipeline`, `airco2`, `SEO`, `startup-script-test`)
+had only ever received the shallow, `main`-only initial pass — no branch/PR
+sweep — while both other clusters already got one. `git branch -a` /
+`git log` against each repo's actual default branch, plus
+`mcp__github__list_pull_requests` / `pull_request_read`, turned up far more
+than the initial pass saw: none of it in `CLAUDE.md`/`AGENTS.md` (this cluster
+has neither), all of it in commit messages and in-repo markdown written
+during past sessions — the same "closest durable substitute" sourcing as the
+other two deep dives.
+
+### 14. A second, confirmed-root-cause WordPress compromise (2026-08-22) is undiscoverable from where anyone would look
+- **What / who:** `aircoenverwarmen-seo-pipeline`'s own incident trail
+  (`rnd/INCIDENT-REMEDIATION-STATUS.md`, dated 2026-08-18/19, and
+  `rnd/INCIDENT-CHECKLIST.md`, last touched 2026-08-25) describes one breach —
+  the 2026-08-10 compromise, remediated by an 2026-08-18 Hetzner-snapshot
+  rebuild — and nothing else. Neither file mentions that on **2026-08-22** a
+  *second* intrusion was found, root-caused, and documented in
+  99% more detail than the first: `RECOVERY-PLAN.md`, 299 lines, added by
+  commit `d06e888` — but in **`startup-script-test`**, on branch
+  `incident-evidence-20260822`, which branches from nothing (`git ls-remote`
+  shows this repo has no `main`/`master` at all — see #16) and has never had
+  a pull request. That plan names the confirmed root cause as **wp2shell**,
+  an unauthenticated WordPress-core RCE chain (CVE-2026-63030 + CVE-2026-60137,
+  disclosed 2026-07-17, exploited here from ~Aug 1), left unpatched because a
+  leftover `automation-by-installatron.php` mu-plugin from the site's previous
+  shared host silently disabled minor core auto-updates since January 2026 —
+  so the fix (WP 6.9.5) was released and available and never installed. It
+  lists 4 removed backdoors (including a 150 KB shell at `wp-conffq.php`), a
+  timestomped file, a hijacked `.htaccess`, and states the site was **stopped
+  and "not yet safe to restart"** pending 7 Tier-0 blockers: patch core to
+  ≥6.9.5, block anonymous `POST /wp-json/batch/v1` at the edge, revoke every
+  WooCommerce REST key (bearer credentials exposing 100+ customers' PII),
+  purge application passwords/session tokens (survive password *and* salt
+  rotation), audit 9 stray `.htaccess` files for `auto_prepend_file`, rotate
+  WP salts, and rotate every credential — **from a device other than the
+  still-un-reimaged NetSupport-RAT workstation**, which held the SSH key,
+  WooCommerce keys, GitHub PAT and Coolify/Hetzner logins.
+- **Where it lives:** One markdown file, one orphan branch, one repo that
+  nothing else in the cluster references or was ever taught to check.
+  `INCIDENT-REMEDIATION-STATUS.md` in the pipeline repo — the file anyone
+  would actually open when picking up this incident — was never updated to
+  point at it, so reading only the "official" incident doc leaves someone
+  believing the story ends at the 2026-08-18 rebuild.
+- **Impact if left alone:** Meanwhile, ordinary pipeline work (menu
+  restructuring, a new drop pass, a productivity-plugin customization)
+  continued in `aircoenverwarmen-seo-pipeline` right through and after
+  2026-08-22 — encouragingly, the one live-write-capable piece of that work
+  (the P10 menu apply) is correctly gated behind `--yes` +
+  `MENU_APPLY_APPROVED=yes` and was never actually run (`da3b85b`: "No live
+  writes"), so this did not turn into a second incident on top of the first.
+  But nothing in this account's tooling would have caught it if it had. This
+  review cannot confirm from repo content alone whether the 7 Tier-0 blockers
+  were ever completed — the 2026-08-18 remediation was itself done by hand
+  "via Coolify terminal (mobile)" and only recorded after the fact, so silent
+  completion is possible. That ambiguity is itself the finding: **a second
+  confirmed unauthenticated-RCE incident against the same production site,
+  six days old as of this review, has no status that any future reviewer —
+  human or agent — would find without independently discovering this branch.**
+- **Opportunity:** Not "automate the remediation" — rotating credentials and
+  patching a live site from a clean device is exactly the kind of step that
+  should stay a deliberate, hand-verified human action (see below). What's
+  missing is purely mechanical: (a) this plan belongs in
+  `aircoenverwarmen-seo-pipeline` next to the other incident docs, or at
+  minimum cross-linked from `INCIDENT-REMEDIATION-STATUS.md`, not on an
+  unrelated repo's disconnected branch; (b) a one-line "is this resolved?"
+  status — even just checked boxes against the 7 Tier-0 items — belongs
+  somewhere a human will actually see it on the next login, the same gap
+  finding #13 already named for the DFIR cluster and now confirmed a second
+  time in a second cluster, which suggests this is an account-wide pattern
+  (incident follow-through tracked nowhere durable) rather than a one-off.
+
+### 15. Three near-identical incident-remediation-review branches, redundant work, still no index
+- **What / who:** `claude/incident-remediation-review-4pjd2a`,
+  `-uub79h`, and `-y3w9qq` in `aircoenverwarmen-seo-pipeline` share the
+  entire P1–P9 replay history (93,794 ledgered writes: 6,280 publishes, 145
+  rewrites, 84,988 draft categorizations, 1,606 retitles, 469 terms, ~300
+  menu/slug ops — all rolled back by the Aug 18 rebuild and replayed from
+  repo finals with checkpoint/epoch tooling) and the same incident checklist
+  commits, then diverge into different tail commits (menu-variant drafting on
+  two of the three; a "verify replay against live" correction on the third).
+  None has a pull request; nothing records that three sessions independently
+  picked up the same incident-review starting point.
+- **Where it lives:** Git branch state only, same as DFIR finding #13.
+- **Opportunity:** This is the same shape as #13, now observed in a second
+  cluster, which upgrades it from "a DFIR-specific lapse" to a recurring
+  cross-account pattern worth a general fix rather than a per-repo one: a
+  lightweight convention (a per-repo `BRANCHES.md`, or just requiring a PR —
+  even a draft one — for any branch meant to survive past its own session)
+  would surface "someone already started this" before a second or third
+  session duplicates 90+ commits of replay work. The replay tooling itself
+  (checkpointing, ground-truth validation, epoch markers distinguishing dead
+  vs. live term ids) is well-built and not the gap — the coordination layer
+  around it is.
+
+### 16. `startup-script-test` has no trunk, no PRs, and is holding the account's most safety-critical undiscovered document
+- **What / who:** The repo has no `main` or `master` branch at all —
+  `git remote show origin` reports its own `HEAD branch` as
+  `claude/seo-folder-review-yvp28s`, a generated session branch, because that
+  is the only ref anyone happened to push first. Four branches exist
+  (`claude/seo-folder-review-yvp28s`, `claude/google-drive-mcp-download-wrlolq`,
+  `claude/hertzner-snapshot-backup-local-mgij3v`, `incident-evidence-20260822`),
+  none merged into any other, zero pull requests ever opened.
+- **Where it lives:** Repo structure. The prior cross-repo review (see
+  `README.md`, since corrected) described this repo as holding one stalled,
+  tangential Google-Drive-inventory handoff — true of three of its four
+  branches, but the fourth is finding #14 above.
+- **Opportunity:** Give the repo an actual default branch (even an empty one
+  with a README pointing at the others) so `HEAD` stops pointing at an
+  arbitrary session branch, and open a PR — draft is fine — for
+  `incident-evidence-20260822` specifically, given #14. This repo is a small,
+  mechanical fix; it is flagged here mainly because its current state is *why*
+  #14 was findable only by deep-diving branches instead of reading `main`.
+
+### 17. PR #3 in `aircoenverwarmen-seo-pipeline`: high-quality, mergeable, unreviewed, and self-flags a pre-publish hardening TODO
+- **What / who:** "Deterministic derived-claim drop" (opened 2026-08-27,
+  `mergeable_state: clean`, base `master`) is a well-documented, benchmarked
+  change (72.0%→93.2% gate rate on one corpus, zero regressions measured
+  against two corpora with opposite failure profiles) — the kind of PR the
+  other two deep-dived clusters' stale PRs (#2 in `rat-hunt`, 9 days
+  unreviewed) show a pattern of accumulating. This one is only a day old, so
+  the urgency is lower, but the shape (opened, clean, zero comments/reviews)
+  is identical.
+- **Where it lives:** GitHub PR state.
+- **Opportunity:** Lower priority than #13/#14 given its age, but worth the
+  same fix in kind: a reviewer nudge after N days with no activity on a
+  green, mergeable PR. Separately, the PR body itself already names a real
+  gap — the workflow scripts it adds hardcode the production IP and an SSH
+  key filename (9 mentions each), flagged by its own author as "worth
+  parameterising via env var before adding a collaborator or making it
+  public." That's a correct, self-identified TODO, not yet tracked anywhere
+  it will survive the PR being merged and forgotten — worth a follow-up issue
+  rather than trusting the PR description to be re-read later.
+
+### Worth noting — a resolved instance of the pattern #4 and #12 are still open gaps for
+- **The credential-materialization anti-pattern here fixed itself, without
+  code enforcement, because the safer fix was also the fix for an unrelated
+  bug.** Two branches independently added a `SessionStart` hook that wrote
+  WooCommerce credentials to a plaintext file on every cloud-session start
+  (`c99914b`/`65c4ffa`); both were reverted within the hour, then replaced in
+  the same session with the actually-correct fix — credential *loaders*
+  falling back to reading `WC_URL`/`WC_KEY`/`WC_SECRET` env vars directly when
+  no file exists, so no file, hook, or setup script is needed at all
+  (`9254a11`). The stated reason for reverting was that the hook broke
+  container resumption, not a security review — but the replacement happens
+  to be strictly safer too (no credential-bearing file touches disk). Unlike
+  findings #4 (`agent-comms` shared-bearer-token ordering) and #12
+  (AgenticUniverse `kill`/`logout` gating), which remain conventions with no
+  enforcement, this is a case where the incentives lined up on their own.
+  Worth keeping as the template to point to when #4/#12 are eventually
+  fixed: prefer "make the safe path also the only path that works" over
+  "document the unsafe path and hope."
+
+### Correctly left manual — not a gap
+- **Whether/when to restart the aircoenverwarmen.nl site and how to notify
+  the client.** `RECOVERY-PLAN.md`'s Tier-2 items include a 72-hour
+  Autoriteit Persoonsgegevens (Dutch DPA) notification clock contingent on a
+  GDPR/AVG assessment, and rotating credentials "from a phone or a different
+  verified-clean device" — both genuinely need a human decision and a human
+  hand on the keyboard, not automation. The gap this review flags (#14) is
+  purely that the plan is undiscoverable, not that any of its steps should
+  have been scripted.
