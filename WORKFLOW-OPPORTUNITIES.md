@@ -497,3 +497,99 @@ other two deep dives.
   hand on the keyboard, not automation. The gap this review flags (#14) is
   purely that the plan is undiscoverable, not that any of its steps should
   have been scripted.
+
+---
+
+## Review: 2026-08-29 — Cross-project comms cluster deep dive (branches and open PRs)
+
+Fourth deep-dive. The DFIR, AgenticUniverse, and aircoenverwarmen/SEO clusters
+each already got a branch/PR sweep (two on 2026-08-27, one on 2026-08-28); the
+cross-project-comms cluster (`ClaudeWebPlayground` + `agent-comms`) had only
+the shallow, `main`-only initial pass. Also checked `legba` as the other
+candidate with no deep dive yet: `git branch -a` shows only `main` plus the
+assigned working branch, last commit 2026-08-15, no divergent branches, no
+open PRs beyond ordinary upstream contributor flow — an external OSS repo with
+nothing account-specific to find. Finding #6 stands unchanged.
+
+`git fetch origin` on `ClaudeWebPlayground` surfaced nine remote branches
+never examined: `CommsChannelB`, `claude-comms`, `claude-comms-private-demo`,
+`claude/agent-fleet-management-hnho02`, `claude/new-session-x66b86`,
+`claude/second-branch-creation-6sqjsp`, `claude/session-check`,
+`claude/untitled-session-h242e9`, `comms-channel`. `agent-comms` itself has
+only `main` and its working branch — expected, since it's a clean 2026-08-16
+export with no history of its own yet.
+
+Cross-checked against `mcp__github__list_pull_requests`: PRs #1, #4, #6 are
+the three open, draft, "do not merge" claude-comms channel PRs — these exactly
+match what `agent-comms/CLAUDE.md` already documents (channel PRs #1/#4/#6
+still living in `ClaudeWebPlayground`), so not a new finding. `agent-comms`
+has zero PRs.
+
+Two of the nine branches (`claude/untitled-session-h242e9`: plugin-install-method
+experiments; `claude/session-check`: a one-off tool/skill boot-inventory
+report) are scratch exploration superseded by what's now on `main` (the
+relay-kit plugin install path) — reviewed, no new findings.
+
+### 18. A stranded branch holds the real incident-planning history behind `rat-hunt`'s transfer design, and an unimplemented multi-agent build architecture for it — neither is linked from anywhere
+- **What / who:** `claude/agent-fleet-management-hnho02` (5 commits, last
+  2026-08-16) forked from a point 13 commits behind the lineage that produced
+  today's `main` and was never rebased or merged; no PR was ever opened for
+  it. It carries two files, `docs/agent-fleet/DESIGN.md` (570 lines) and
+  `docs/agent-fleet/OPERATION-PLAN.md` (505 lines):
+  - `OPERATION-PLAN.md` is a full incident runbook — seven hard ordering
+    constraints, a two-person keyboard/off-box-reader protocol, and the exact
+    reasoning behind a three-tier evidence-transfer scheme (stage JSON always
+    crosses; collected artefacts cross only as a second copy after USB;
+    archives/executables/rescued files never cross) built around an
+    Android-hotspot-in-airplane-mode courier. This is visibly the design
+    ancestor of `rat-hunt/TRANSFER-SETUP.md` and `Send-Evidence.ps1`'s three
+    transfer tiers (USB always, phone hotspot + FTP for stage JSON, artefacts
+    gated) — the same shape, down to the phone-hotspot detail — but neither
+    `rat-hunt` nor `Claude-Remote-recover`'s `CLAUDE.md` Provenance section
+    (which names only `tools/rat-hunt/` and `.claude/skills/rat-hunt*`)
+    mentions this branch or these files as where that reasoning came from.
+    The plan's one item marked "UNALLOCATED" (`data.notCovered` on
+    `Get-Persistence.ps1`'s envelope) turns out to already be fixed in both
+    current DFIR repos — verified directly: `notCovered`/`notCoveredSweptBy`/
+    `notCoveredFields` exist in `RatHunt.psm1` in both `rat-hunt` and
+    `Claude-Remote-recover`, with matching assertions in
+    `tests/Test-EvidenceModel.ps1` in both — but nothing marks this stale plan
+    as resolved, so a future reader could easily re-open a closed question.
+  - `DESIGN.md` Part 3 is a substantial, sourced multi-agent "fleet"
+    architecture for *building* rat-hunt itself (not for running it): a
+    20-paper arXiv prior-art pass via isolated single-abstract subagents,
+    landing on Prosecutor–Judge role separation (evidence-gathering split from
+    verdict-issuing) because rat-hunt's own `claimType`/verdict data model
+    already encodes that separation and its *build process* doesn't — plus a
+    schema-first-then-fan-out topology keyed to `RatHunt.psm1` being the
+    repo's only shared-write surface. There is no evidence this fleet was ever
+    actually run against the repo; the toolkit's subsequent development
+    (visible in the DFIR cluster's own branch sprawl, finding #13) looks like
+    ordinary single-session iteration, not the coordinated fan-out this
+    document proposes.
+- **Where it lives:** One orphan git branch in `ClaudeWebPlayground`, 13
+  commits stale relative to other lineage on the same repo, no PR, not
+  referenced by any `README.md` or `CLAUDE.md` in any of the three repos it
+  concerns.
+- **Opportunity:** (a) Cheap and purely mechanical — link this branch (or
+  cherry-pick the two docs into a `docs/history/` or similar) from `rat-hunt`'s
+  and `Claude-Remote-recover`'s Provenance sections, since it's real design
+  history that explains a concrete implementation choice (the transfer-tier
+  shape) that would otherwise look unmotivated to a future reader; mark the
+  "UNALLOCATED" item resolved so it can't be mistaken for still-open. (b)
+  Lower urgency, worth a note rather than a task: this account's `Workflow`
+  tool (pipeline/parallel/agent primitives) postdates this 2026-08-16 design
+  and provides exactly the machinery Part 3 assumed didn't exist yet — if a
+  future session revisits building out rat-hunt's remaining gaps
+  (`Get-PreBreachTimeline.ps1`'s unrun sections, `Find-Dropper.ps1`'s Sysmon/WMI
+  paths, per `HANDOFF.md`), this document is a ready-made schema-first fan-out
+  plan rather than something to redesign from scratch.
+- Same shape as #13/#15/#16: a real, useful artifact stranded on an unlinked
+  branch. Adds a fourth cluster to that pattern, reinforcing it as
+  account-wide rather than DFIR-specific.
+
+### Correctly left manual — not a gap
+- **Whether to actually adopt the Part 3 fleet design**, and which of two
+  divergent branches' fixes wins in any future reconciliation of the DFIR
+  branch sprawl (finding #13) — both are human calls, not something a link-up
+  of stale docs should decide by default.
