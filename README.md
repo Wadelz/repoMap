@@ -102,6 +102,8 @@ rather than inferred relationships.
 ```
 ClaudeWebPlayground ──(split, 2026-08-16 @ 217cfb8)──> agent-comms
 ClaudeWebPlayground ──(split)──────────────────────────> rat-hunt
+ClaudeWebPlayground/claude/agent-fleet-management-hnho02 (orphan branch, no PR)
+    ──(design ancestor of the 3-tier transfer scheme)──> rat-hunt/TRANSFER-SETUP.md, Send-Evidence.ps1
 rat-hunt ──(extended: egress lockdown + collector relay)──> Claude-Remote-recover
 aircoenverwarmen-seo-pipeline ──(same root commit fb36aa2, frozen)──> airco2 (active, diverged)
 startup-script-test ──(branch incident-evidence-20260822: 2nd compromise of the site airco2 publishes to)──> airco2
