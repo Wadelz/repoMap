@@ -593,3 +593,91 @@ relay-kit plugin install path) — reviewed, no new findings.
   divergent branches' fixes wins in any future reconciliation of the DFIR
   branch sprawl (finding #13) — both are human calls, not something a link-up
   of stale docs should decide by default.
+
+## Review: 2026-08-30 — AZURE deep dive (infra/misc cluster)
+
+Fifth deep-dive. `AZURE` was the only non-empty repo left with no branch/PR
+sweep: the initial pass gave it one line (README.md, "worth noting"); `legba`
+already got its deep dive on 2026-08-29 (confirmed nothing new, stands); `SEO`,
+`security`, `Coolify-` remain confirmed-empty placeholders. `git branch -a`
+shows only `main` plus the assigned working branch (identical, one commit,
+`5ecef64`); `git diff main` against the working branch is empty;
+`mcp__github__list_pull_requests` (state=all) returns zero — no open, closed,
+or merged PRs, ever. Reviewed in full: `scripts/setup-azure.sh` (the only
+logic in the repo), `.claude/hooks/session-start.sh`, `.claude/settings.json`,
+`README.md`. No transcripts or handoff docs exist for this repo; the README
+and the scripts' own header comments are the only durable source, and they are
+unusually thorough — this repo already documents its own tradeoffs better
+than most.
+
+### 19. No parse/lint gate on the two scripts that bootstrap every remote session's Azure tooling
+- **What / who:** `scripts/setup-azure.sh` and `.claude/hooks/session-start.sh`
+  are the entire repo. The hook is wired into `.claude/settings.json` as a
+  `SessionStart` hook (runs for everyone once merged to `main`), and the
+  script's contents are *also* meant to be pasted verbatim into the
+  setup-script field of unrelated environments — both entry points documented
+  explicitly in `README.md`. There is no `.github/workflows/` directory, no
+  shellcheck config, no test of any kind; `bash -n` (checked this run) passes
+  on both files today, but nothing re-runs that check on a future edit.
+- **Where it lives:** repo root — absence, not a file.
+- **Opportunity:** This is the same hazard class `rat-hunt/CLAUDE.md` already
+  treats as a first-order concern for its PowerShell scripts — "PowerShell
+  parses a whole file before executing any of it, so a syntax error means
+  nothing runs" — except here the blast radius is wider, not narrower: a
+  syntax error in `setup-azure.sh` doesn't strand one incident host, it breaks
+  Azure-tooling bootstrap for every session that either merges this repo's
+  hook or has pasted the script into an environment config. A two-line CI job
+  (`bash -n` on both files, plus `shellcheck` — both cheap, no live Azure
+  credentials needed) would catch exactly the class of error the account has
+  already been burned by once (rat-hunt's BOM/parse incident) before it ships,
+  for the cost of adding the one workflow file this repo has never had.
+  Medium-high priority given the account-wide blast radius, despite the repo
+  itself being tiny.
+
+### 20. Copy-paste propagation into environment setup-script fields has no drift detection — second confirmed instance
+- **What / who:** `README.md` §"Two ways to run it" documents, as *intended
+  design*, that getting this tooling into a session on any other repo means a
+  human pastes the current contents of `scripts/setup-azure.sh` into that
+  environment's setup-script field by hand. There is no install command, no
+  version marker written into the pasted copy, and nothing that reads back
+  what a given environment's field currently holds — so once `setup-azure.sh`
+  changes (a new default extension, a security-relevant fix to the login
+  flow), every environment that already has an older paste silently keeps
+  running it, indefinitely, with no signal to anyone that it's stale.
+- **Where it lives:** `AZURE/README.md` (the paste-by-hand instructions);
+  the actual pasted copies live outside any repo, in each environment's own
+  config, invisible to this review.
+- **Opportunity:** This is the identical shape of finding #3 (the `relay-kit`
+  plugin's `SKILL.md` → `plugins/relay-kit/skills/` → regenerated-installer →
+  re-pasted-into-setup-script chain, `ClaudeWebPlayground`/`agent-comms`), now
+  confirmed in a second, unrelated repo — which raises this from "one repo's
+  quirk" to "the account has no general mechanism for noticing when a
+  copy-pasted setup script has drifted from its source." A full fix needs
+  either an environments API/CLI this session doesn't have visibility into, or
+  a low-tech convention (an embedded version string the script logs on every
+  run, cross-checked by hand against the repo) — worth solving once, generally,
+  rather than per-repo. Recorded here rather than re-argued in full; see
+  finding #3 for the mechanism-level detail.
+
+### Correctly left manual — not a gap
+- **The `az login --service-principal` secret-on-argv trade-off** is already
+  named explicitly in `README.md` ("visible in the process list to anything
+  else running in the container… acceptable trade in a single-tenant ephemeral
+  container; prefer `AZURE_CLIENT_CERTIFICATE_PATH`") with the safer
+  alternative given equal billing. Nothing to automate here — the tradeoff is
+  already surfaced, not hidden, and the decision of which auth mode to
+  configure per-environment is a per-tenant judgment call.
+- **`curl | bash` installs for `az` and `azd` via Microsoft's own
+  `aka.ms` install scripts**, unpinned to a specific version. This is the
+  vendor-documented install method (not a shortcut this repo invented), every
+  step is already idempotent and re-run-safe, and pinning would trade "always
+  current" for a staleness problem of its own. Not a gap worth designing
+  around absent a concrete incident.
+
+### Nothing else new
+No other findings from this pass. The repo's small size cuts both ways here:
+there was very little surface to review, but what exists (idempotency,
+explicit env-var tuning, degrade-not-abort error handling, the dual-entry-point
+design, the documented auth tradeoff) was already in good shape going in —
+this run's two findings are about the process *around* the repo (CI gate,
+propagation tracking), not defects in the script itself.
