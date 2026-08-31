@@ -110,6 +110,18 @@ startup-script-test ──(branch incident-evidence-20260822: 2nd compromise of 
 AgenticUniverse/relay ┄┄ architecturally similar to, but NOT derived from ┄┄ agent-comms/cross-project-relay
 ```
 
+## Tooling
+
+`tools/repo-inventory.sh` operationalizes the local inventory/sync capability
+this audit repeatedly flags as missing: run it over the directories where you
+keep clones (`./tools/repo-inventory.sh ~/code ~/projects`) and it discovers
+every git repo, reports branch / remotes / ahead-behind / dirty state /
+stashes / unpushed work, and calls out the two risks that recur across the
+account — repos with no remote (nothing backing them up) and stranded,
+never-pushed commits. `--fetch` pulls updates from remotes, `--pull`
+fast-forwards safely, and `--tsv` emits machine-readable rows. See
+`tools/README.md` for details.
+
 ## Repos with nothing to report
 
 `SEO`, `security`, and `Coolify-` are empty placeholders. Three of
