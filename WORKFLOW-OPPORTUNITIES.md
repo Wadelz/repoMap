@@ -681,3 +681,87 @@ explicit env-var tuning, degrade-not-abort error handling, the dual-entry-point
 design, the documented auth tradeoff) was already in good shape going in —
 this run's two findings are about the process *around* the repo (CI gate,
 propagation tracking), not defects in the script itself.
+
+## Review: 2026-08-31 — legba (security tooling cluster)
+
+Sixth deep-dive, and legba's first at content level. The only two prior
+touches were the initial pass (finding #6, plus the low-priority notes on
+docs-audit and the version/tag double-check) and the 2026-08-29
+cross-project-comms review's branch/PR sweep, which checked `git branch -a`
+and open PRs only ("last commit 2026-08-15, no divergent branches, no open
+PRs beyond ordinary upstream contributor flow... nothing account-specific to
+find") without reading the commit content itself. No new commits exist since
+that check — `main` and the assigned working branch are both still at
+`dab974b` (2026-08-15), confirmed via `git fetch origin` and `git log`;
+`mcp__github__list_pull_requests` (state=open) returns zero. So this pass
+isn't chasing new activity, it's the first time anyone has actually read the
+history rather than just its shape — same posture as the AZURE deep-dive on
+2026-08-30.
+
+### 21. Recurring reactive fixes for one bug class across five plugins, with no shared guard and no fuzzing — and at least one instance still unaudited
+- **What / who:** PRs #98–#102 (merged 2026-07-05/06, all from the same
+  external contributor, `gigioneggiando`) fixed five independent instances
+  of the same underlying defect across five different protocol plugins: a
+  remote server's response drives either an unbounded allocation from a
+  server-controlled size field (AMQP `connection.start` frame, Kerberos TCP
+  response length) or a panic on malformed input (non-ASCII HTTP headers,
+  out-of-range IPv4 octets, a multi-byte UTF-8 SMTP reply), or a missing
+  read/write timeout that lets a stalling server hang the operator's thread
+  indefinitely (RDP, Kerberos TCP). Each was fixed with hand-written,
+  plugin-local bounds/timeouts (`amqp/mod.rs`'s `MAX_CONN_START_FRAME`,
+  `kerberos/transport.rs`'s `MAX_KRB_RESPONSE`, IRC's `IRC_MAX_RESPONSE`)
+  rather than a shared bounded-read helper, and none of it is backed by a
+  fuzz target — `find . -iname "*fuzz*"` returns nothing in the repo, and
+  `ci.yml` runs only `cargo clippy`/`cargo test`, neither of which exercises
+  adversarial/malformed input, which is what all five bugs needed to
+  surface.
+  Confirmed this defect class is not fully closed out: Kerberos's UDP
+  transport (`transport.rs::UDP::request`, untouched by #101, which fixed
+  only the TCP path in the same file) still does `sd.peek(&mut resp)` into a
+  buffer that doubles in a loop with no upper bound, and the function's own
+  `timeout` parameter is discarded (`fn request(&self, _: Duration, raw:
+  &[u8])`) — so a Kerberos KDC reachable over UDP can still drive unbounded
+  growth and can still hang the caller forever, the exact two failure modes
+  #101 fixed on its sibling TCP path.
+- **Where it lives:** Scattered across `src/plugins/{amqp,kerberos,http,irc,
+  smtp,rdp}/` as five independent, ad-hoc patches; no shared utility, no
+  test, no CI gate, no tracking issue tying the five together as one class.
+- **Opportunity:** legba's whole purpose is speaking many protocols to
+  servers it does not control or trust — any response-parsing path
+  untouched by this cluster of fixes is a plausible unaudited DoS/panic
+  surface, and the fact that five turned up in one contributor's single pass
+  through the plugin list is itself evidence there was no systematic sweep,
+  only an opportunistic one. Two concrete, boundable actions: (a) fix the
+  Kerberos UDP transport the same way its TCP sibling was fixed — cap the
+  peek-loop growth and honor the `timeout` parameter instead of discarding
+  it; (b) add `cargo-fuzz` targets for the response-parsing entry point of
+  each plugin that reads a server-controlled length/size field before
+  allocating (AMQP and Kerberos are the two confirmed instances; MSSQL,
+  Oracle, MQTT, STOMP, and ScyllaDB were not audited this pass and should be
+  treated as unreviewed, not cleared), wired into CI as a time-boxed job
+  (`cargo fuzz run <target> -- -max_total_time=60`) — the direct, mechanical
+  answer to "no CI gate would have caught any of these five." High priority:
+  this is a live security gap in a security tool, already proven to produce
+  real bugs, not a hypothetical one.
+
+### 22. No documented vulnerability-disclosure channel for a tool that parses adversarial network input by design
+- **What / who:** There is no `SECURITY.md`, no security-contact section,
+  and no responsible-disclosure process anywhere in the repo, despite
+  finding #21 above being a live demonstration that this codebase's core
+  function — parsing responses from untrusted servers across roughly two
+  dozen protocol plugins — produces real, exploitable-by-a-malicious-server
+  bugs.
+- **Where it lives:** Absence — no file, no README section.
+- **Opportunity:** Low-effort, standard-practice fix: a `SECURITY.md` naming
+  a contact or process for reporting a plugin-parsing bug privately before
+  it's filed as a public GitHub issue (the current implicit path, since
+  nothing else is documented). Not urgent standalone, but cheap enough to
+  ride along with whatever addresses #21.
+
+### Nothing else reviewed this pass
+The release process (`AGENTS.md`/`CLAUDE.md` steps 0–11) and the two
+already-recorded low-priority notes (docs-audit/changelog human-gating,
+the duplicated version/tag consistency check) were re-read and still stand
+unchanged from the initial pass — not re-litigated here. A full
+plugin-by-plugin audit beyond the response-parsing pattern in #21 (e.g.
+credential-handling paths, CLI option parsing) was out of scope this run.
