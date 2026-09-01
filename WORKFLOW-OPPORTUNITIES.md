@@ -765,3 +765,134 @@ the duplicated version/tag consistency check) were re-read and still stand
 unchanged from the initial pass — not re-litigated here. A full
 plugin-by-plugin audit beyond the response-parsing pattern in #21 (e.g.
 credential-handling paths, CLI option parsing) was out of scope this run.
+
+## Review: 2026-09-01 — AgenticUniverse re-deep-dive (branches, a hook, and a stale PR)
+
+Seventh deep-dive, second pass on this repo (first: 2026-08-27, content-level
+on the relay/cloudflare deploy pipeline — findings #11, #12). Picked per the
+"commit activity since last review" tiebreaker: a background activity scan
+across all 13 in-scope repos found AgenticUniverse to be the *only* one with
+default-branch commits (`e5f7b949`, merged 2026-08-31) and an open-PR update
+newer than its own last review date; every other repo was either unchanged
+since its last pass or already confirmed empty. Source: `git branch -a` /
+`git log` / `git merge-base --is-ancestor` against `origin/main` for all 10
+branches, `mcp__github__pull_request_read` for PR #1, and direct reads of
+`.claude/hooks/scope-guard.py`, `.claude/settings.json`, `docs/team-assembly.md`.
+No raw transcripts read; `scope-guard.py`'s own docstring is itself an
+unusually detailed, dated post-hoc incident writeup, used here the same way
+other repos' `CLAUDE.md` narration has been used throughout this review.
+
+### 23. A live access-control hook failed open for its entire operating life, silently, with zero regression test guarding the fix
+- **What/who:** `.claude/hooks/scope-guard.py`, wired as a PreToolUse hook in
+  `.claude/settings.json`, is meant to deny a generated teammate's
+  Edit/Write/MultiEdit/NotebookEdit call outside its declared `## Scope` glob
+  set — the only mechanism turning that generated prose into something a
+  tool call can actually be refused for. Its two-commit history (`6ae9dcb`
+  introduced it; `103cd56`, same day, fixed it) shows it matched every
+  teammate's PreToolUse payload against a manifest keyed by *archetype*
+  (`ui-verifier`), but the payload field it read (`agent_type`) carries the
+  *roster name* a human gave that teammate (`"zed"`) — the opposite of what
+  the equivalent subagent payload reports, and not obvious from the static
+  hook schema (verified only by capturing real payloads off a live team's
+  stdin). Every direct-key lookup for a teammate therefore missed, and
+  because the hook's only failure mode is "print nothing, which Claude Code
+  treats as allow" — denial is not the default anywhere in its control flow
+  — the guard denied nothing, ever, for any teammate, while the generated
+  agent files, the on-disk manifest, and the settings.json wiring all looked
+  correctly configured. It was caught only by a live test against a real
+  running team: a teammate typed `ui-verifier` was asked to edit a file
+  outside its scope, and the fact that the edit went through — not the
+  teammate's own account of what happened — was the evidence.
+- **Where it lives:** `.claude/hooks/scope-guard.py` (now carries the long
+  docstring narrating this). No test file anywhere in the repo references
+  it — `.github/workflows/` contains exactly one file, `deploy-relay.yml`,
+  and it only ever touches `relay/cloudflare/`; it does not run this hook,
+  or anything else in `.claude/hooks/`, in CI.
+- **Opportunity:** same shape as findings #4 and #12 (a mechanism that looks
+  like enforcement with no automated check behind it), except here the
+  mechanism already shipped, already had exactly the silent failure the
+  class predicts, and the fix that landed still has no regression test — a
+  future change to the manifest format or the payload schema could
+  reintroduce the identical bug with nothing to catch it before the next
+  live incident does. Cheap to close: a fixture PreToolUse payload shaped
+  like a real teammate call (`agent_type` set to a roster name, a manifest
+  keyed by archetype, a target path outside the resolved scope) asserted to
+  produce a deny decision, run in CI. High priority — this is a live,
+  currently-deployed access control for a system that already runs
+  unattended agent teams with edit access to the repo.
+
+### 24. PR #1 is fully superseded but still open, and its "dirty" state is a stale-base artifact, not a real conflict
+- **What/who:** PR #1, "Support HEAD requests on unauthenticated relay
+  routes" (opened 2026-08-24, `mergeable_state: dirty`), targets
+  `claude/test-agent-teams-wrntvt` as its base — not `main`. Verified via
+  `git merge-base --is-ancestor`: the PR's head branch,
+  `claude/team-relay-deployment-arhzow`, is **already a full ancestor of
+  `main`** — every one of its commits shipped already, through the ordinary
+  sequence of merges visible in `main`'s own log (the roster/CLAUDE.md merge
+  on 2026-08-31 is its tip). The base branch it's still diffed against is
+  117 commits behind `main` and shares none of that later history, which is
+  what produces the "dirty" state GitHub reports — not a genuine content
+  conflict with anything current.
+- **Where it lives:** GitHub PR state only.
+- **Opportunity:** functionally a no-op that *looks* like a stuck,
+  conflicted, unreviewed PR — someone opening it expecting to review a small
+  HEAD-request change would instead see 112 commits and +16,461/-92 across
+  82 files against a dead base, and reasonably conclude it needs work, when
+  the actual fix has been live on `main` since before this review started.
+  Close it as superseded (reference the commits already on `main`), and
+  delete or retarget `claude/test-agent-teams-wrntvt` so nothing else gets
+  based on a 117-commit-stale branch by accident. Cheap, mechanical, and
+  removes a false signal from the PR queue — same "PR hygiene" shape as
+  `rat-hunt` PR #2 and `aircoenverwarmen-seo-pipeline` PR #3, but the
+  opposite failure direction: those are real work waiting on review, this
+  one is already done and just needs closing.
+
+### 25. Two more branches carry finished, unlinked work; a third looks like unwitting duplicate effort
+- **What/who:** `claude/relay-share-target` (7 commits, last 2026-08-25) is
+  a complete, device-tested feature — a share-target PWA capture flow with a
+  signed Android APK built without the Android SDK and a BrowserStack App
+  Automate device-testing harness, including a real bug found and fixed on
+  real hardware (a restart leaving a second capture listener alive). No PR,
+  110 commits behind `main`. `claude/frozen-session-recovery-d9m4dl` (1
+  commit, 2026-08-25) is a diagnosis/recovery writeup for exactly the class
+  of problem this account's `CLAUDE.md` files already treat as first-order
+  (frozen/orphaned sessions, watcher staleness) — also no PR, 116 behind.
+  Separately, `claude/new-session-absdvb` (3 commits, 2026-08-30) reworks
+  `registry.py` to distinguish env vars, feature gates, and CLI flags — the
+  exact same distinction `main`'s `edb26dd` (2026-08-30, merged same day)
+  credits to a *different* branch, `claude/probe-surfaces-team-wiring`. The
+  two branches are not ancestors of each other; whether `new-session-absdvb`
+  is redundant with what already shipped or a genuinely different pass at
+  the same problem was not resolved this review and needs a side-by-side
+  read of both diffs before either is touched further.
+- **Where it lives:** git branch state only; none referenced from `main`,
+  `README.md`, or any `docs/` file.
+- **Opportunity:** the same account-wide pattern already named four times
+  (`rat-hunt`/`Claude-Remote-recover` finding #13,
+  `aircoenverwarmen-seo-pipeline` finding #15, `startup-script-test` finding
+  #16, `ClaudeWebPlayground` finding #18) — real, sometimes device-verified
+  work stranded on unindexed branches — now confirmed in a fifth repo. Worth
+  escalating from "recurring observation" to "worth a general fix" the next
+  time any session has bandwidth for account-wide hygiene rather than a
+  per-repo one: a lightweight branch index, or a norm of opening even a
+  draft PR for any branch meant to survive past its own session, would have
+  caught both the stranded feature work and the possible duplicate-effort
+  case above before a sixth instance shows up in a sixth repo.
+
+### Correctly left manual — not a gap
+- **Which of `new-session-absdvb` or `probe-surfaces-team-wiring`'s
+  `registry.py` approach is correct, if they actually differ** — a real
+  diff-reading judgment call, not something to resolve by assuming either
+  branch wins by default.
+
+### Also corrected this run
+- **`security`'s "empty placeholder" label (README.md).** `main` is
+  genuinely a 10-byte README, but two branches off that root carry real
+  content — one of them, `claude/chat-history-review-r1aofy`, is the exact
+  incident record both `rat-hunt/CLAUDE.md` and
+  `Claude-Remote-recover/CLAUDE.md` cite under "Provenance." The prior
+  "empty placeholder" label in `README.md` meant this cross-repo reference
+  was never verified against the repo it points to. Fixed in `README.md`
+  this run; not a workflow-opportunity finding on its own, but worth noting
+  since the label being wrong is what let it go unverified for five prior
+  reviews.
