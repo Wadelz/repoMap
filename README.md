@@ -93,7 +93,16 @@ rather than inferred relationships.
   logs in via service principal on every ephemeral Claude Code container
   start. Explicitly designed to be copy-pasted into *other* repos'
   environment setup fields, not just used here.
-- **security** — empty (10-byte README only). Placeholder.
+- **security** — `main` is a 10-byte README placeholder, but that undersells
+  it: two branches off that empty root carry real, referenced content.
+  `claude/chat-history-review-r1aofy` is the incident record for the
+  aircoenverwarmen.nl NetSupport RAT compromise — the exact file both
+  `rat-hunt/CLAUDE.md` and `Claude-Remote-recover/CLAUDE.md` point to under
+  "Provenance" ("The incident record itself is in `Wadelz/security` at
+  `claude/chat-history-review-r1aofy`"). `claude/setup-probe-log-9gxobu` is
+  an unrelated one-commit `SessionStart` hook experiment. Neither branch has
+  a PR; corrected here 2026-09-01 after the initial pass's "empty
+  placeholder" label caused this cross-repo reference to go unverified.
 - **Coolify-** — completely empty: no commits at all on any branch.
   Placeholder for a future Coolify-related project.
 
@@ -108,11 +117,14 @@ rat-hunt ──(extended: egress lockdown + collector relay)──> Claude-Remot
 aircoenverwarmen-seo-pipeline ──(same root commit fb36aa2, frozen)──> airco2 (active, diverged)
 startup-script-test ──(branch incident-evidence-20260822: 2nd compromise of the site airco2 publishes to)──> airco2
 AgenticUniverse/relay ┄┄ architecturally similar to, but NOT derived from ┄┄ agent-comms/cross-project-relay
+rat-hunt, Claude-Remote-recover ──(Provenance section names it as the incident record)──> security/claude/chat-history-review-r1aofy
 ```
 
 ## Repos with nothing to report
 
-`SEO`, `security`, and `Coolify-` are empty placeholders. Three of
+`SEO` and `Coolify-` are empty placeholders; `security`'s `main` is too, but
+see the Infra/misc entry above — two of its branches carry real content and
+one is cross-referenced from two other repos. Three of
 `startup-script-test`'s four branches hold an unrelated, stalled handoff doc
 and Hetzner rescue tooling — its fourth branch does not belong in this list,
 see the aircoenverwarmen cluster above and `WORKFLOW-OPPORTUNITIES.md`. None
