@@ -896,3 +896,49 @@ other repos' `CLAUDE.md` narration has been used throughout this review.
   this run; not a workflow-opportunity finding on its own, but worth noting
   since the label being wrong is what let it go unverified for five prior
   reviews.
+
+## Review: 2026-09-02 — DFIR cluster re-check (no new findings)
+
+Eighth review overall. Picked per the prioritization rule as the least
+recently reviewed cluster: DFIR (`rat-hunt`, `Claude-Remote-recover`) last got
+a deep dive on 2026-08-27, older than every other cluster's most recent pass
+(AgenticUniverse 2026-09-01, legba 2026-08-31, AZURE 2026-08-30,
+cross-project-comms 2026-08-29, aircoenverwarmen/SEO 2026-08-28). Before
+committing to that pick, spot-checked every other cluster for commit activity
+since its own last review (`git branch -a` / latest commits on
+`aircoenverwarmen-seo-pipeline`, `airco2`, `startup-script-test`,
+`ClaudeWebPlayground`, `legba`, `AZURE`, `AgenticUniverse`, `agent-comms`,
+plus `list_pull_requests` on `aircoenverwarmen-seo-pipeline` and `rat-hunt`):
+**nothing account-wide has a new commit since its cluster's last review.**
+The one exception is age, not content — see below.
+
+Re-examined `rat-hunt` and `Claude-Remote-recover` branch/PR state in full
+(`git branch -a`, `list_commits` on every branch, `list_pull_requests`
+state=all on both repos) against finding #13's 2026-08-27 description.
+
+**Nothing new.** Specifically:
+- `Claude-Remote-recover` is byte-for-byte unchanged: still only `main`
+  (tip `3be35353`, 2026-08-19) and `claude/new-session-pg9x7i` (tip
+  `32fb2e13`, 2026-08-21), still no PR. The 19-commit gap, the
+  `-ClaudeRunAsUser`/`-CollectorOnly` hardening, and the unrelated
+  Azure-jump-host/Coolify commits finding #13 already named are all still
+  exactly where they were.
+- `rat-hunt` gained two branches since the last review — `add-file-rescue`
+  (tip `d0e254b8`) and `claude/install-matt-pocock-plugin-vez29j` (tip
+  `fe9f509c`) — but both are checked and are **not** new stray work: the
+  first points at a commit that's already an ancestor of `main`, the second
+  points at the exact same commit `main` is currently at. Both are stale
+  local working branches from sessions that already merged, safe to delete,
+  not a repeat of the finding #13 pattern.
+- PR #2 in `rat-hunt` ("Record the fourth staging directory...") is still
+  open, still zero comments/reviews/review-requests — `updated_at` is
+  unchanged at `2026-08-24T15:03:30Z`. It was 9 days stale when finding #13
+  flagged it; it is now **15 days** stale with no action taken. Noted here
+  as an update to #13's status, not a new finding — the fix finding #13
+  already proposed (a tracked index of live incident branches, and closing
+  the loop on this PR specifically) still stands unimplemented.
+
+No new "worth automating" or "correctly left manual" items surfaced this
+pass. Recorded so a future review doesn't re-spend a full deep-dive re-
+confirming a cluster that hasn't moved — the next DFIR check should wait for
+either commit/PR activity or a longer idle interval than nine days.
