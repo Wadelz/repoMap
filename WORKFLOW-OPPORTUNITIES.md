@@ -942,3 +942,122 @@ No new "worth automating" or "correctly left manual" items surfaced this
 pass. Recorded so a future review doesn't re-spend a full deep-dive re-
 confirming a cluster that hasn't moved — the next DFIR check should wait for
 either commit/PR activity or a longer idle interval than nine days.
+
+## Review: 2026-09-03 — aircoenverwarmen/SEO cluster re-check (branches only)
+
+Ninth review overall. Picked over the cross-project-comms cluster (its last
+deep dive, 2026-08-29, is one day newer than this cluster's, 2026-08-28) after
+a routine default-branch check on `airco2` turned up something the
+prioritization step should not skip past: `git remote show origin` reports
+its `HEAD branch` as `e24-production-run`, not `main`/`master` as the
+existing `README.md` entry's phrasing implies. That was reason enough to
+re-verify this cluster's branch/PR state properly rather than assume the
+2026-08-28 sweep was complete. `startup-script-test` was re-checked in full
+(`git branch -a`, tip commits, `list_pull_requests` state=all) and confirmed
+byte-for-byte unchanged since 2026-08-28 — same four branches, same tips, zero
+PRs — no new findings there.
+
+### 26. Two independently built daily-ops-automation systems for this same pipeline, built the same day, neither merged, neither cross-linked — and the stopgap scheduler both of them name has already lapsed
+- **What/who:** On 2026-08-25, two different sessions each diagnosed the exact
+  same problem — this pipeline's operators re-deriving state by hand at the
+  start of every session — and each built a standing daily-check design to
+  fix it, on two different repos in the same cluster, with no reference to
+  the other:
+  - `airco2` branch `ops/tier-a-daily-routine` (`a8c1e1d`, no PR): a spec
+    (`docs/ops/tier-a-daily-routine.md`) plus a seeded `SESSIONS.md`, covering
+    a cross-repo blocker check against `Claude-Remote-recover` (this pipeline
+    is explicitly paused pre-publish on that incident's resolution — see
+    commit `84320d9`), a branch sweep, session-log append, and an
+    `OPEN-TASKS.md` reconciliation *proposal* file (never a direct edit, by
+    design — closing an item is called out as a judgment call).
+  - `aircoenverwarmen-seo-pipeline` branch `claude/pensive-keller-ikmxb8`
+    (`b80a79a`, no PR): a working, dependency-free 286-line
+    `scripts/daily_pipeline_digest.py` plus design notes
+    (`docs/daily-digest/README.md`), covering branch-hygiene/stale-branch
+    detection, checkpoint-ledger delta/stall detection, a WooCommerce
+    credential-resolution check (including a specific regression guard: has
+    the credential-writing `SessionStart` hook — added and reverted twice
+    already — reappeared in `.claude/settings.json`), a live published-count
+    sentinel check, and tracked-doc-staleness reporting. Prints `OK`/`ESCALATE`
+    with exit code 0/1 and is explicitly designed to notify only on the
+    latter.
+  Neither branch's commit history is descended from the other, and neither
+  design doc, `README.md`, or `CLAUDE.md` anywhere in the cluster mentions
+  the other exists. Both design docs independently name the same limitation
+  and reach the same conclusion about it: the in-session `CronCreate` tool is
+  session-scoped and **auto-expires after 7 days regardless of session
+  lifetime**, so it is "a pilot convenience, not the production schedule" —
+  `airco2`'s doc says a fresh session must "re-arm the schedule";
+  `aircoenverwarmen-seo-pipeline`'s doc names the actual fix (a Claude Code on
+  the web *scheduled task*, the exact mechanism this review itself runs
+  under) and gives the prompt to configure one. Both were written 2026-08-25;
+  today is 2026-09-03, nine days later — whatever pilot `CronCreate` job either
+  session armed has certainly lapsed by now, and because neither branch
+  merged, no later session had a `main`-visible reason to notice or re-arm
+  anything.
+- **Where it lives:** Two unmerged git branches, no PRs, no cross-reference.
+  Findable only by walking every branch's own commits, not by reading either
+  repo's `main`/`master`, `README.md`, or (this cluster has neither)
+  `CLAUDE.md`.
+- **Opportunity / impact if left alone:** This is not "build the automation"
+  — it's already built, twice, by people who'd each correctly diagnosed the
+  need. The work left is purely integrative: (a) pick one design or merge the
+  best of both (the `pensive-keller` script is the more complete
+  implementation; the `tier-a` spec's cross-repo incident-blocker check is the
+  one capability it lacks and is arguably the highest-value single check in
+  the cluster, since it's this pipeline's actual publish gate) — a real
+  reconciliation decision, correctly left to a human/session judgment call,
+  not something to auto-merge; (b) once merged, stand up the real scheduled
+  task both design docs already point at, rather than another `CronCreate`
+  pilot that will silently lapse the same way. Left alone, this is the same
+  stranded-branch pattern already named five times in this account
+  (findings #13/#15/#16/#18/#25) — except here the stranded artifact is
+  automation *for the very kind of workflow this whole review exists to
+  find*, sitting fully built and inert.
+  **One concrete correctness risk if either script is merged and run
+  as-is without review:** `daily_pipeline_digest.py`'s live published-count
+  sentinel is hardcoded to `2631` (`DEFAULT_SENTINEL_EXPECTED`). This
+  repo's own `rnd/OPEN-TASKS.md` item 7.7 (unrelated code, same underlying
+  quantity) already documents that a hardcoded dashboard sentinel of "2,632"
+  is stale against a live count of "4,632" and calls it "a permanent false
+  alarm on the only unauthorised-publish tripwire." Whether the digest
+  script's `2631` baseline has drifted the same way was not verified this
+  pass (no WooCommerce credentials in this session to call the live API) —
+  flagged here so whoever merges this script checks the current live count
+  first, rather than inheriting a false-alarm baseline the same repo has
+  already been burned by once.
+
+### 27. Two more stale, unreviewed PRs on `aircoenverwarmen-seo-pipeline` that finding #17 didn't cover
+- **What/who:** Finding #17 (2026-08-28) flagged PR #3 as "a day old... the
+  urgency is lower" than the DFIR cluster's stale PRs. Re-listing all PRs
+  (state=all) this pass shows #3 is not the only one open: **PR #1**
+  ("e24 run: in-flight Gemini checkpoint," opened 2026-08-14, `e24-production-run`
+  → `master`) and **PR #2** ("codex vs minimax-v2 route comparison," opened
+  2026-08-16, `e24-production-run-16ykwd` → `e24-production-run`) are both
+  still open, both with zero comments/reviews as of this review — 20 and 18
+  days stale respectively, older than `rat-hunt` PR #2 was when finding #13
+  first flagged it (9 days) and older than it is now (15 days, per the
+  2026-09-02 re-check). Finding #17 missed both because it only listed PRs
+  opened at review time; neither predates that review by much, but both
+  predate PR #3.
+- **Where it lives:** GitHub PR state only.
+- **Opportunity:** Same fix as #17 already proposed — a reviewer nudge after
+  N days of no activity on a green/mergeable PR — now with three qualifying
+  PRs in this one repo instead of one. Not re-litigating priority: this is a
+  correction to #17's scope, not a new class of finding.
+
+### Correctly left manual — not a gap
+- **Which of the two daily-digest designs to keep, or how to merge them** —
+  a real design decision (one has a cross-repo blocker check the other
+  lacks; the other has a working implementation the first doesn't), not
+  something to resolve by picking whichever merged first.
+
+### Nothing else new
+`airco2`'s and `aircoenverwarmen-seo-pipeline`'s other previously-uncatalogued
+branches (`claude/coolify-api-menu-dump-db965s`, `claude/customize-product-management-plugin-lypbi6`,
+`claude/datadog-plugin-customize-8cd0dq`, `claude/productivity-plugin-customize-v43iri`,
+`claude/remove-startup-hook-commit-sa7foz`, `claude/woocommerce-non-admin-api-key-unhg8u`,
+`e24-production-run-16ykwd-part2`) were checked and are either already-reverted
+one-offs, a stale ref pointing at a commit already covered above, or ordinary
+feature work with no workflow-formalization angle beyond what's already
+recorded — not itemized individually.
