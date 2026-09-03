@@ -65,7 +65,15 @@ rather than inferred relationships.
   actual production experiment runs (`rnd/experiments/e1`…`e24`) happened;
   `aircoenverwarmen-seo-pipeline` never diverged from the shared starting
   point. Treat `airco2` as canonical and `aircoenverwarmen-seo-pipeline` as
-  a baseline snapshot, not an independent fork.
+  a baseline snapshot, not an independent fork. **Correction, 2026-09-03:**
+  this repo's actual default branch is `e24-production-run`, not `main`/
+  `master` (`master` here is frozen at the shared root commit) — checking
+  out the repo without pointing at that branch shows the frozen snapshot,
+  not the live state. It also carries `e24-production-run-16ykwd` (E16 route
+  comparison, unmerged) and `claude-comms/airco2` (an open, deliberately
+  unmerged cross-project-comms channel PR, #1) — see
+  `WORKFLOW-OPPORTUNITIES.md`'s 2026-09-03 entry for a branch this repo
+  holds that isn't in either of those.
 - **SEO** — empty (git-initialized, zero commits). Placeholder only.
 - **startup-script-test** — misnamed relative to its content, and more
   entangled with the pipeline above than the initial pass found (see
