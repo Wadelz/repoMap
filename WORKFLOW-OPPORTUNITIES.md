@@ -1061,3 +1061,100 @@ branches (`claude/coolify-api-menu-dump-db965s`, `claude/customize-product-manag
 one-offs, a stale ref pointing at a commit already covered above, or ordinary
 feature work with no workflow-formalization angle beyond what's already
 recorded — not itemized individually.
+
+## Review: 2026-09-04 — Cross-project comms cluster re-check (content level, not just branches)
+
+Tenth review overall. Picked per the prioritization rule as the least recently
+reviewed cluster: cross-project-comms (`ClaudeWebPlayground`, `agent-comms`)
+last touched 2026-08-29, older than every other cluster's most recent pass
+(legba 2026-08-31, AZURE 2026-08-30, AgenticUniverse 2026-09-01, DFIR
+2026-09-02, aircoenverwarmen/SEO 2026-09-03). Before committing to it, spot-
+checked every repo in scope for commit/branch/PR drift since its own last
+review (`git fetch` + `git log` against each repo's actual default branch,
+`list_pull_requests` state=all on `ClaudeWebPlayground` and `agent-comms`):
+**nothing account-wide has moved.** Every repo's tip commit matches what the
+prior reviews already recorded, `ClaudeWebPlayground`'s branch list is
+byte-for-byte the same nine remote branches the 2026-08-29 review enumerated,
+and its PR list is unchanged (#1/#4/#6 still open-draft, everything else still
+closed, no new PRs anywhere in either repo).
+
+Given that, re-running the 2026-08-29 branch/PR sweep would be exactly the
+"re-review an unchanged cluster just to produce output" case the brief warns
+against. What that sweep never did, though, was read the cluster at content
+level — `agent-comms/cross-project-relay/src/` (the actual Cloudflare Worker
+code), its test suite, and its build/deploy tooling had only been described
+secondhand via `CLAUDE.md`/`HANDOVER.md`/`CREDENTIALS.md`, the same gap
+findings #11 and #23 closed for `AgenticUniverse`'s relay. This pass reads and
+**runs** that code instead of the docs describing it — source: direct
+execution of `npx tsc --noEmit`, `node test/*.mjs` for all four suites, and a
+manual `dist/` build, plus reads of `package.json`, `wrangler.jsonc`,
+`tsconfig.json`, `README.md`, `fire.ts`, `channel.ts`.
+
+### 28. `npm run test:all` is broken today, not hypothetically — two of four suites refuse to run, and nothing in the repo can fix that by design
+- **What/who:** `cross-project-relay/package.json`'s `test:all` script chains
+  `alarm-retry.mjs && fire-notifier.mjs && github-bridge.mjs && unicast.mjs`.
+  Ran as documented (`npm install && npm run test:all`) on a clean checkout:
+  `alarm-retry.mjs` (26 assertions) and `fire-notifier.mjs` (48 assertions)
+  pass — both fall back to importing the `.ts` source directly when no build
+  exists, a pattern their own header comments describe as "no build step
+  needed." `github-bridge.mjs` and `unicast.mjs` do not have that fallback:
+  each exits 2 immediately with `build first: npx tsc --outDir dist
+  --module es2022 --target es2022 src/<file>.ts` and runs zero assertions.
+  `test:all` therefore halts at the third script — silently, from a caller's
+  perspective, since a chained `&&` failure looks like "the tests failed,"
+  not "half the suite never ran." `package.json` has no `build` script at
+  all, and `tsconfig.json` hardcodes `"noEmit": true` project-wide, so the
+  fix these two files print in their own error text is not reachable through
+  any existing npm command — `npm run typecheck` (the only compile step
+  wired up) is `tsc --noEmit` by definition and can never produce the `dist/`
+  either file is waiting for.
+  Verified this is a packaging gap, not a code defect: manually running the
+  exact command the error message names (`npx tsc --outDir dist --module
+  es2022 --target es2022 src/github.ts src/unicast.ts`) and re-running both
+  files afterward passes all 55 + 18 assertions clean. Full suite, correctly
+  built: **147/147 assertions, zero network calls, sub-second.** `npx tsc
+  --noEmit` (the real project-wide typecheck) was already clean before any of
+  this — the source is fine; only the two test files' loading convention is
+  inconsistent with the other two and with what `package.json` actually
+  offers.
+- **Where it lives:** `cross-project-relay/package.json` (`test:all`, and the
+  absent `build` script), `test/github-bridge.mjs` and `test/unicast.mjs`
+  (the `dist/`-only import, no `.ts` fallback), `tsconfig.json` (`noEmit`).
+  No CI wiring exists anywhere in `agent-comms` to have caught this —
+  confirmed by `find . -iname "*.yml" -o -iname "*.yaml"` returning nothing
+  in the whole repo, so `test:all` has apparently never been run start-to-
+  finish by anything other than a human who happened to build `dist/` by
+  hand first and never noticed the script's own advertised path doesn't work
+  standalone.
+- **Opportunity:** This is the same shape as findings #1/#2 (DFIR),
+  #11 (AgenticUniverse relay), and #19 (AZURE) — tests exist, are fast, need
+  no live credentials, and have no CI gate — now confirmed in a fourth
+  cluster, and worse in one specific way: those three were "nobody runs this
+  automatically," this one is "the documented way to run it locally doesn't
+  even work as shipped." Two independent, cheap fixes, either sufficient
+  alone: (a) give `fire-notifier.mjs`'s `.ts`-source fallback to
+  `github-bridge.mjs` and `unicast.mjs` too, so `test:all` needs no build
+  step at all, matching the other two files' own stated design goal; (b) add
+  a real `build` script (`tsc --outDir dist ...`, separate from the
+  `noEmit` typecheck config) and have `test:all` depend on it. Either would
+  then be a one-line CI job (`npm ci && npm run typecheck && npm run
+  test:all`) with zero live-credential exposure — the exact same "trivial CI
+  candidate" character finding #2 already named for the DFIR suites. High
+  priority for the same reason #23 was: this is verification infrastructure
+  for a Worker that gates cross-account message delivery and a `/fire` path
+  capable of spawning sessions on another account, and it currently cannot
+  even prove its own correctness to a human who follows its own
+  instructions, let alone to CI.
+
+### Correctly left manual — not a gap
+- **Whether to add per-peer tokens before enabling `/fire`** (finding #4) and
+  **whether to widen the GitHub PAT for cross-repo channel routing**
+  (`HANDOVER.md` §4) are unchanged, real judgment/credential-scoping calls
+  re-read this pass and still correctly gated on a human — not re-litigated
+  here.
+
+### Nothing else new
+`ClaudeWebPlayground`'s nine remote branches and PRs #1/#4/#6 were re-checked
+against the 2026-08-29 review's inventory and are byte-for-byte unchanged — no
+new branches, no new PRs, no state transitions. Not re-itemized; see that
+review's entry (finding #18) for what they hold.
