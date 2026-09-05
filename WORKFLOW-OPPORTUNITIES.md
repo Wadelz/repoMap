@@ -1158,3 +1158,134 @@ manual `dist/` build, plus reads of `package.json`, `wrangler.jsonc`,
 against the 2026-08-29 review's inventory and are byte-for-byte unchanged — no
 new branches, no new PRs, no state transitions. Not re-itemized; see that
 review's entry (finding #18) for what they hold.
+
+## Review: 2026-09-05 — legba re-visit (unaudited surface from the 2026-08-31 pass)
+
+Eleventh review overall. Prioritization check first: every cluster's default
+branch tip was re-fetched and diffed against what the last review of each
+recorded (`AZURE` `5ecef64`, `AgenticUniverse` `e5f7b94`, `Claude-Remote-recover`
+`3be3535`, `ClaudeWebPlayground` `217cfb8`, `agent-comms` `8758343`, `airco2`
+`84320d9`, `aircoenverwarmen-seo-pipeline` `fb36aa2`, `legba` `dab974b`,
+`rat-hunt` `fe9f509`, `security` `6dfa0b4`) — **nothing account-wide has moved**
+since the 2026-09-04 review; every tip matches exactly.
+
+With no drift anywhere, the prioritization rule's literal reading (oldest
+last-reviewed cluster first) points at `AZURE`, last touched 2026-08-30. But
+that repo is two files, both already read in full on that date with nothing
+left unreviewed, and its tip is unchanged — a re-review would only reproduce
+"nothing new," the exact output the brief says to skip. `legba` (2026-08-31,
+next-oldest) explicitly recorded unreviewed surface instead of just "unchanged
+since last time": its own review said "a full plugin-by-plugin audit beyond
+the response-parsing pattern in #21 (e.g. credential-handling paths, CLI
+option parsing) was out of scope this run" and named MSSQL, Oracle, MQTT,
+STOMP, and ScyllaDB specifically as "not audited... should be treated as
+unreviewed, not cleared." That's a bounded, concrete gap to close rather than
+a cluster to re-confirm, so this run reads those five plugins directly (all
+under 230 lines each) plus re-traces the manager/runtime call path that
+invokes every plugin's `attempt()`, rather than re-treading AZURE's two
+already-fully-read files.
+
+### 29. Finding #21's "missing timeout" bug class is confirmed in three more plugins, and partially still open in the one already "fixed" for it — with no backstop anywhere in the call path
+- **What/who:** `src/plugins/manager.rs:184` calls `plugin.attempt(&creds,
+  timeout).await` directly, with no `tokio::time::timeout` of its own — every
+  plugin is entirely responsible for bounding its own I/O to the caller-supplied
+  `timeout`. The shared connection helper nearly every raw-socket plugin uses,
+  `src/utils/net.rs::async_tcp_stream`, applies `timeout` only to the TCP
+  connect (and TLS upgrade, if any) — never to anything read or written
+  afterward. `irc/mod.rs` is the one plugin that gets this right, and it says
+  so in its own dated comment: "a malicious IRC server can stream unbounded
+  data (OOM) or stall forever without ever sending the welcome (001) line... if
+  neither a size cap nor a read deadline is applied," fixed with
+  `tokio::time::timeout_at(deadline, stream.read(...))` in a loop, plus a
+  64 KiB response cap.
+  Checked against that reference pattern, of the five plugins flagged
+  unaudited:
+  - **MQTT** (`mqtt/mod.rs` `test_v4`/`test_v5`) — `options.set_keep_alive(timeout)`
+    sets the MQTT ping-interval, not a connect/read deadline; `eventloop.poll().await`
+    itself is never wrapped in `tokio::time::timeout` anywhere. A target that
+    accepts the TCP connection and never completes the CONNACK handshake hangs
+    the call indefinitely.
+  - **STOMP** (`stomp/mod.rs`) — both the CONNECT `write_all` (line 47) and the
+    response `read` (line 59) are unwrapped. Same hang, same trigger: accept
+    the connection, never reply.
+  - **Oracle, Scylla** — clean. Both delegate the whole handshake to a real
+    client library (`sibyl`, the `scylla` crate) called inside
+    `tokio::time::timeout(timeout, ...)`/the builder's own
+    `connection_timeout`; neither plugin parses bytes off the wire itself.
+    Confirmed not a gap — recording this so a future pass doesn't re-open it.
+  - **MSSQL** — no timeout gap (both writes and the read are already wrapped
+    in `tokio::time::timeout`), but a separate, smaller correctness issue:
+    the success check is `resp.len() > 10 && resp[8] == 0xe3` against
+    `resp: [u8; 1024]`, a fixed-size array whose `.len()` is always `1024` —
+    the condition is permanently true and the actual byte count `stream.read()`
+    returned is never captured or checked. Not a hang or a memory-safety issue
+    (unread bytes stay zero-initialized, so a short read can't forge a `0xe3`
+    at index 8), just dead code masking what should be an explicit "did we get
+    enough bytes to inspect" check.
+  Going back to re-verify finding #21's own "fixed" plugin against the same
+  reference pattern (not one of the five flagged unaudited, but not re-checked
+  against IRC's pattern before now either): **AMQP is only half-fixed.** Its
+  recorded fix (`MAX_CONN_START_FRAME`, a 1 MiB cap on the server-declared
+  frame size) closes the unbounded-allocation half of the bug, but all three
+  of its reads — `read_exact` at line 65 (connection.start header),
+  `read_exact` at line 81 (connection.start body, using the now-capped size),
+  and `read` at line 118 (the final connection.start-ok response) — remain
+  completely unwrapped by any timeout. The size cap only ever fires once bytes
+  actually arrive; a server that accepts the connection and the protocol
+  header write, then sends nothing at all, still hangs the call forever,
+  which is the exact other half of the class finding #21 named for RDP and
+  Kerberos-TCP and fixed there but not here.
+  Also: `redis/mod.rs`, not in the original five but reached while re-tracing
+  every raw-socket plugin against the reference pattern — 7 separate
+  `.read()`/`.write_all()` call sites across its cached-auth and full-check
+  paths (lines 74–103, 128–134, 162–167, 197–202), all unwrapped, identical
+  hang.
+- **Where it lives:** `src/plugins/manager.rs` (no backstop timeout around the
+  call site), `src/utils/net.rs` (timeout ends at connect), and
+  `mqtt/mod.rs`, `stomp/mod.rs`, `amqp/mod.rs`, `redis/mod.rs` (the four
+  plugins with the actual gap). No CI wiring exists to catch this class — the
+  same absence finding #21 already noted (`find . -iname "*fuzz*"` still
+  returns nothing; `ci.yml` still runs only `clippy`/`test`, neither of which
+  exercises a server that simply never replies).
+- **Impact if left alone:** legba's entire purpose is speaking to servers it
+  doesn't control, including ones an attacker or a deliberately-stalling
+  honeypot controls. For these four plugins, a single target that accepts the
+  TCP connection and then writes nothing pins one of `concurrency`'s worker
+  slots forever, with nothing anywhere in the call path — not the plugin, not
+  `manager.rs`, not `runtime.rs` — able to reclaim it. Enough such targets (or
+  even one, hit repeatedly across `retries`) degrades a scan toward never
+  finishing, exactly the failure mode finding #21 already fixed for RDP and
+  Kerberos-TCP.
+- **Opportunity:** two independent fixes, either sufficient alone for the
+  three plugins with zero bound, both worth doing together for defense in
+  depth: (a) apply IRC's already-proven pattern —
+  `tokio::time::timeout`/`timeout_at` around every post-connect read and
+  write — to `mqtt`'s two `poll()` calls, `stomp`'s write and read, `amqp`'s
+  three remaining reads, and `redis`'s seven call sites; (b) add the backstop
+  finding #21's fix didn't include either: wrap `manager.rs`'s
+  `plugin.attempt(&creds, timeout).await` itself in an outer
+  `tokio::time::timeout`, so a new plugin (or a regression in an existing one,
+  like AMQP's partial fix) can't reintroduce this class silently in the
+  future. (b) is the cheaper, more durable fix — one call site instead of five
+  plugins and counting — but loses the specific "timed out reading the
+  server's response" diagnostic IRC's per-call error message gives; doing
+  both gets the durability of (b) with the diagnostic quality of (a). Separately,
+  fix MSSQL's dead length check while touching that file, since it's a one-line
+  correctness nit sitting in the same review pass, not a new class of finding.
+  High priority, same tier as #21: a live, unaudited-until-now instance of an
+  already-proven security-relevant bug class in a security tool, not a
+  hypothetical.
+
+### Correctly left manual — not a gap
+- **Whether to fix this via per-plugin timeouts, a manager-level backstop, or
+  both** is an implementation-shape decision with a real tradeoff (diagnostic
+  quality vs. long-term durability), spelled out above rather than picked by
+  default.
+
+### Nothing else new
+CLI option parsing (the other unreviewed area finding #21 named alongside
+credential-handling paths) was spot-checked across `options.rs` in the plugins
+above and in `src/options.rs`: all use `clap`'s derive macros with typed
+fields and no hand-rolled parsing of untrusted input, so it doesn't share the
+response-parsing/credential-handling risk profile finding #21 and this pass
+are about — not itemized further.
